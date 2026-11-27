@@ -145,6 +145,101 @@ describe('shaping', function () {
       '223+1974|143+801|39+1176|270@180,80+0|268@1060,50+0|51+1452|101@900,-600+0|15+1798',
     );
 
+    describe('lam + alef ligature', function () {
+      let openFont = () =>
+        fontkit.openSync(
+          new URL('data/NotoSans/NotoKufiArabic-Regular.ttf', import.meta.url),
+        );
+
+      it('should join lam + alef into one glyph before beh', function () {
+        // The sign reads lam + alef + beh. Lam and alef join into glyph 50
+        // (advance 1380); beh keeps its isolated glyph 133 (advance 1593).
+        // The line is two glyphs and 1593 + 1380 = 2973, not the three
+        // isolated widths 1407 + 592 + 1593 = 3592.
+        let { glyphs, positions, advanceWidth } = openFont().layout('لاب');
+        assert.deepEqual(
+          glyphs.map((glyph) => glyph.id),
+          [133, 50],
+        );
+        assert.deepEqual(
+          positions.map((position) => position.xAdvance),
+          [1593, 1380],
+        );
+        assert.equal(advanceWidth, 2973);
+      });
+
+      it('should use the ligature outline, not lam + alef side by side', function () {
+        let font = openFont();
+        let run = font.layout('لاب');
+        let lam = font.layout('ل').glyphs[0];
+        let alef = font.layout('ا').glyphs[0];
+        let [beh, ligature] = run.glyphs;
+
+        assert.equal(ligature.id, 50);
+        assert.match(ligature.path.toSVG(), /^M92 160/);
+        assert.notEqual(ligature.path.toSVG(), lam.path.toSVG());
+        assert.notEqual(ligature.path.toSVG(), alef.path.toSVG());
+        assert.notEqual(lam.path.toSVG(), alef.path.toSVG());
+
+        // Beh is untouched by the join: same glyph, advance and outline.
+        assert.equal(beh.id, 133);
+        assert.equal(beh.advanceWidth, 1593);
+        assert.equal(beh.path.toSVG(), font.layout('ب').glyphs[0].path.toSVG());
+      });
+
+      it('should keep the isolated lam, alef and beh unchanged', function () {
+        let font = openFont();
+
+        let lam = font.layout('ل');
+        assert.equal(lam.glyphs.length, 1);
+        assert.equal(lam.glyphs[0].id, 34);
+        assert.equal(lam.positions[0].xAdvance, 1407);
+        assert.match(lam.glyphs[0].path.toSVG(), /^M545 -492/);
+
+        let alef = font.layout('ا');
+        assert.equal(alef.glyphs.length, 1);
+        assert.equal(alef.glyphs[0].id, 5);
+        assert.equal(alef.positions[0].xAdvance, 592);
+        assert.match(alef.glyphs[0].path.toSVG(), /^M205 1556/);
+
+        let beh = font.layout('ب');
+        assert.equal(beh.glyphs.length, 1);
+        assert.equal(beh.glyphs[0].id, 133);
+        assert.equal(beh.positions[0].xAdvance, 1593);
+      });
+
+      it('should read a lone lam as glyph 34 after a joined line', function () {
+        let font = openFont();
+        let run = font.layout('لاب');
+
+        // Shaping the line must not leak the ligature's step back onto lam.
+        assert.equal(run.glyphs[1].id, 50);
+        let lam = font.layout('ل');
+        assert.equal(lam.glyphs[0].id, 34);
+        assert.equal(lam.positions[0].xAdvance, 1407);
+        assert.match(lam.glyphs[0].path.toSVG(), /^M545 -492/);
+      });
+
+      it('should advance the line by the ligature, not by lam + alef', function () {
+        // Every glyph after the ligature starts on its 1380, so the run is
+        // 619 shorter than laying lam, alef and beh out separately.
+        let font = openFont();
+        let joined = font.layout('لاب');
+        let separate =
+          font.layout('ل').advanceWidth +
+          font.layout('ا').advanceWidth +
+          font.layout('ب').advanceWidth;
+
+        assert.equal(joined.advanceWidth, 2973);
+        assert.equal(separate, 3592);
+        assert.equal(separate - joined.advanceWidth, 619);
+
+        let behStart = joined.positions[0].xAdvance;
+        assert.equal(behStart, 1593);
+        assert.equal(behStart + joined.positions[1].xAdvance, 2973);
+      });
+    });
+
     test(
       'should handle cursive attachment positioning',
       'NotoSans/NotoNastaliqUrduDraft.ttf',

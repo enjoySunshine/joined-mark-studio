@@ -1,17 +1,25 @@
-import fs from "node:fs";
-import { openSync } from "../src/node.js";
+import fs from 'node:fs';
+import { openSync } from 'fontkit';
+import { layoutLine, renderLineSVG } from './line.mjs';
 
-const font = openSync(new URL("../test/data/OpenSans/OpenSans-Regular.ttf", import.meta.url));
-const glyph = font.glyphForCodePoint(0x41);
-const d = glyph.path.toSVG();
-const box = glyph.path.bbox;
-const w = Math.max(1, Math.ceil(box.maxX - box.minX));
-const h = Math.max(1, Math.ceil(box.maxY - box.minY));
-const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box.minX} ${-box.maxY} ${w} ${h}" width="480" height="480">
-  <rect x="${box.minX}" y="${-box.maxY}" width="${w}" height="${h}" fill="#111"/>
-  <path d="${d}" transform="scale(1,-1)" fill="#f4f1ea"/>
-</svg>
-`;
-fs.writeFileSync(new URL("./out.svg", import.meta.url), svg);
-console.log("wrote preview/out.svg", w, h);
+// The sign: lam + alef + beh. Lam and alef join into one stroke, so the
+// line is two glyphs (133, 50) with a total advance of 2973, not the
+// three isolated widths (1407 + 592 + 1593 = 3592).
+const font = openSync(
+  new URL('../test/data/NotoSans/NotoKufiArabic-Regular.ttf', import.meta.url),
+);
+const text = 'لاب';
+
+const line = layoutLine(font, text);
+const svg = renderLineSVG(line, {
+  title: `${text} (${line.glyphs.length} glyphs)`,
+});
+fs.writeFileSync(new URL('./out.svg', import.meta.url), svg);
+
+const summary = line.glyphs
+  .map(({ id, advance }) => `${id}+${advance}`)
+  .join('|');
+console.log(
+  `wrote preview/out.svg ${text}: ${line.glyphs.length} glyphs, ` +
+    `${summary}, total ${line.advanceWidth}`,
+);
